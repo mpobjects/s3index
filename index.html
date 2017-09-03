@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="en-us">
+<!-- 
+
+   Copyright 2017 MP Objects BV
+
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
+
+       http://www.apache.org/licenses/LICENSE-2.0
+
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License.
+
+ -->
+<head>
+<meta charset="utf-8">
+<title>S3 Bucket Index</title>
+<link rel="stylesheet"
+	href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap.min.css"
+	integrity="sha384-BVYiiSIFeK1dGmJRAkycuHAHRg32OmUcww7on3RYdg4Va+PmSTsz/K68vbdEjh4u"
+	crossorigin="anonymous">
+<link rel="stylesheet"
+	href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap-theme.min.css"
+	integrity="sha384-rHyoN1iRsVXV4nD0JutlnGaslCJuC7uwjduW9SVrLvRYooPp2bWYgmgJQIXwl/Sp"
+	crossorigin="anonymous">
+<style type="text/css">
+tr.directory {
+	cursor: pointer;
+}
+</style>
+</head>
+<body>
+
+	<div id="pleaseWait" class="container-fluid"
+		style="position: fixed; bottom: 0; left: 0; right: 0;">
+		<div class="progress">
+			<div class="progress-bar progress-bar-striped active"
+				role="progressbar" style="width: 100%">Loading bucket content
+				...</div>
+		</div>
+	</div>
+
+	<div id="index" class="container-fluid"></div>
+
+	<script
+		src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.2.1/jquery.min.js"
+		integrity="sha256-hwg4gsxgFZhOsEEamdOYGBf13FyQuiTwlAQgxVSNgt4="
+		crossorigin="anonymous"></script>
+	<script
+		src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/js/bootstrap.min.js"
+		integrity="sha384-Tc5IQib027qvyjSMfHjOMaLkfuWVxZxUPnCJA7l2mCWNIpG9mGCD8wGNIcPD7Txa"
+		crossorigin="anonymous"></script>
+	<script
+		src="https://cdnjs.cloudflare.com/ajax/libs/mustache.js/2.3.0/mustache.min.js"
+		integrity="sha256-iaqfO5ue0VbSGcEiQn+OeXxnxAMK2+QgHXIDA5bWtGI="
+		crossorigin="anonymous"></script>
+
+	<script type="text/javascript">
+		s3index = (function() {
+			"use strict";
+
+			var t = function(id) {
+				return $('#tmpl-' + id).html();
+			};
+
+			var s3index = function(target, config) {
+				this.init = function() {
+					if (this.config.bucket === undefined) {
+						return;
+					}
+					this.target.append(Mustache.render(t('main')));
+					this.loadContent(config.root, $('table tr', this.target)
+							.first());
+				};
+
+				this.loadContent = function(prefix, target) {
+					var _this = this;
+					this.busy(true);
+					$.get(this.config.bucket, {
+						delimiter : '/',
+						prefix : prefix,
+						'list-type' : '2'
+					}).done(function(data) {
+						_this.processContent(data, target);
+						_this.busy(false);
+					}).fail(function() {
+						alert('Failed to get bucket content.');
+						_this.busy(false);
+					});
+				};
+
+				this.processContent = function(data, target) {
+					var _this = this;
+					var entries = [];
+					data = $(data).children().first();
+					this.parseCommonPrefixes(data, entries);
+					this.parseContents(data, entries);
+					this.render(entries, target);
+				};
+
+				this.parseCommonPrefixes = function(xml, result) {
+					var prefix = $(xml).children('Prefix').text();
+					$(xml).children('CommonPrefixes').each(
+							function(idx, entry) {
+								entry = $(entry);
+								var res = {
+									key : entry.children('Prefix').text(),
+									prefix : prefix,
+									isdir : true,
+								};
+								res.name = res.key.substring(prefix.length);
+								result.push(res);
+							});
+				};
+
+				this.parseContents = function(xml, result) {
+					var _this = this;
+					var prefix = $(xml).children('Prefix').text();
+					$(xml).children('Contents').each(
+							function(idx, entry) {
+								entry = $(entry);
+								var key = entry.children('Key').text();
+								if (key === prefix) {
+									return;
+								}
+								var res = {
+									key : key,
+									prefix : prefix,
+									isdir : false,
+									size : entry.children('Size').text(),
+									lastModified : entry.children(
+											'LastModified').text()
+								};
+								res.name = res.key.substring(prefix.length);
+								res.uri = _this.config.bucket + '/' + res.key;
+								result.push(res);
+							});
+				};
+
+				this.render = function(entries, target) {
+					entries.sort(function(a, b) {
+						return a.name.localeCompare(b.name);
+					});
+
+					// find the proper target to add something to
+
+					target.data('loaded', true);
+					var _this = this;
+					for (var i = 0; i < entries.length; ++i) {
+						var entry = entries[i];
+						this.formatEntry(entry);
+						
+						var keyidx = this.keyidxctr++;
+						this.keyidx[entry.key] = keyidx;
+						entry['tree-node'] = 'treegrid-'+keyidx;
+						if (this.keyidx[entry.prefix] !== undefined) {
+							entry['tree-parent'] = 'treegrid-parent-'+this.keyidx[entry.prefix];
+						}
+
+						var tmpl = entry.isdir ? "dir" : "file";
+						target.after(Mustache.render(t(tmpl), entry));
+						target = target.next();
+
+						if (entry.isdir) {
+							target.click(function() {
+								var elm = $(this);
+								if (!elm.data('loaded')) {
+									_this.loadContent(entry.key, elm);
+								}
+							});
+						}
+					}
+				};
+
+				this.formatEntry = function(entry) {
+					if (entry.size !== undefined) {
+						if (entry.size == 0) {
+							entry.prettySize = 0;
+						} else {
+							// Based on work by Andrew V.
+							// CC BY-SA 3.0 
+							// Source https://stackoverflow.com/a/20732091
+							var i = Math.floor(Math.log(entry.size)
+									/ Math.log(1024));
+							entry.prettySize = (entry.size / Math.pow(1024, i))
+									.toFixed(2)
+									* 1
+									+ [ ' B', ' kiB', ' MiB', ' GiB', ' TiB' ][i];
+						}
+					}
+					if (entry.lastModified !== undefined) {
+						// TODO
+					}
+				};
+
+				this.busy = function(isbusy) {
+					if (this.config.pleaseWait === undefined) {
+						return;
+					}
+					this.config.pleaseWait.toggle(isbusy);
+				};
+				
+				this.keyidxctr = 0;
+				this.keyidx = {};
+
+				this.target = target;
+				this.config = config;
+				this.init();
+			}
+
+			return s3index;
+		}());
+	</script>
+
+	<script id="tmpl-main" type="x-tmpl-mustache">
+	<table class="table table-striped">
+		<tr>
+			<th>Name</th>
+			<th class="text-right">Size</th>
+			<th>Last Modified</th>
+		</tr>
+	</table>
+	</script>
+
+	<script id="tmpl-dir" type="x-tmpl-mustache">
+		<tr class="directory {{tree-node}} {{tree-parent}}" data-key="{{key}}">
+			<td>{{name}}</td>
+			<td></td>
+			<td></td>
+		</tr>
+	</script>
+
+	<script id="tmpl-file" type="x-tmpl-mustache">
+		<tr class="file {{tree-parent}}" data-key="{{key}}">
+			<td><a href="{{uri}}">{{name}}</a></td>
+			<td  class="text-right" title="{{size}} bytes">{{prettySize}}</td>
+			<td>{{lastModified}}</td>
+		</tr>
+	</script>
+
+	<script type="text/javascript">
+		// Following function by Raivo Fishmeister
+		// CC BY-SA 3.0 
+		// Source: https://stackoverflow.com/a/13419367
+		var q = function(qstr) {
+			var query = {};
+			var a = (qstr[0] === '?' ? qstr.substr(1) : qstr).split('&');
+			for (var i = 0; i < a.length; i++) {
+				var b = a[i].split('=');
+				query[decodeURIComponent(b[0])] = decodeURIComponent(b[1] || '');
+			}
+			return query;
+		}(location.search);
+
+		var config = {
+			// Bucket URL
+			bucket : q.bucket,
+			// Starting prefix
+			root : q.root ? q.root : '',
+			// Element to show/hide while loading
+			pleaseWait : $('#pleaseWait'),
+			// Function can return false to hide elements
+			filter : function() {
+			}
+		};
+
+		// TODO: if bucket is undefined, quess from location
+		new s3index($('#index'), config);
+	</script>
+</body>
+</html>
