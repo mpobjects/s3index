@@ -120,6 +120,11 @@
 							+ [ ' B', ' kiB', ' MiB', ' GiB', ' TiB' ][i];
 				};
 				
+				this.formatDate = function() {
+					var dt = new Date(this.lastModified);
+					return dt.toLocaleString();
+				};
+				
 				this.parents = function() {
 					var res = [];
 					var i = this.parent;
@@ -128,10 +133,6 @@
 						i = i.parent;
 					}
 					return res;
-				};
-
-				this.formatDate = function() {
-					return this.lastModified;
 				};
 
 				this.bucket = bucket;
@@ -362,7 +363,7 @@
 		<tr class="file" data-key="{{key}}">
 			<td><a href="{{uri}}"><i class="glyphicon glyphicon-file"></i> {{name}}</a></td>
 			<td class="text-right" title="{{size}} bytes">{{formatSize}}</td>
-			<td>{{lastModified}}</td>
+			<td title="{{lastModified}}">{{formatDate}}</td>
 		</tr>
 	</script>
 
