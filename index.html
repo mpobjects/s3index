@@ -20,6 +20,8 @@
 <head>
 <meta charset="utf-8">
 <title>S3 Bucket Index</title>
+<meta name="generator" content="s3index; https://github.com/mpobjects/s3index" />
+<meta name="robots" content="none" />
 <link rel="stylesheet"
 	href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap.min.css"
 	integrity="sha384-BVYiiSIFeK1dGmJRAkycuHAHRg32OmUcww7on3RYdg4Va+PmSTsz/K68vbdEjh4u"
@@ -28,11 +30,6 @@
 	href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap-theme.min.css"
 	integrity="sha384-rHyoN1iRsVXV4nD0JutlnGaslCJuC7uwjduW9SVrLvRYooPp2bWYgmgJQIXwl/Sp"
 	crossorigin="anonymous">
-<style type="text/css">
-tr.directory {
-	cursor: pointer;
-}
-</style>
 </head>
 <body>
 
@@ -46,6 +43,8 @@ tr.directory {
 	</div>
 
 	<div id="index" class="container-fluid"></div>
+	
+	<div class="container-fluid text-right text-muted"><small>Created using <a href="https://github.com/mpobjects/s3index">s3index by MP Objects</a></small></div>
 
 	<script
 		src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.2.1/jquery.min.js"
@@ -68,17 +67,121 @@ tr.directory {
 				return $('#tmpl-' + id).html();
 			};
 
+			var s3resource = function(bucket, xmlNode) {
+				this.processNode = function(xml) {
+					switch (xml.prop("tagName")) {
+					case 'ListBucketResult':
+					case 'CommonPrefixes':
+						this.processDirectory(xml);
+						break;
+					case 'Contents':
+						this.processFile(xml);
+						break;
+					}
+				};
+
+				this.processDirectory = function(xml) {
+					this.isdir = true;
+					this.key = xml.children('Prefix').text();
+					this.prefix = xml.parent().children('Prefix').text();
+				};
+
+				this.processFile = function(xml) {
+					this.isdir = false;
+					this.key = xml.children('Key').text();
+					this.prefix = xml.parent().children('Prefix').text();
+					this.size = xml.children('Size').text();
+					this.lastModified = xml.children('lastModified').text();
+				};
+
+				this.name = function() {
+					if (this.key === '') {
+						return '[root]';
+					}
+					return this.key.substring(this.prefix.length, this.isdir?this.key.length-1:this.key.length);
+				};
+
+				this.uri = function() {
+					return this.bucket + '/' + this.key;
+				};
+
+				this.formatSize = function() {
+					if (this.size === undefined) {
+						return undefined;
+					}
+					if (this.size === 0) {
+						return null;
+					}
+					// Based on work by Andrew V.
+					// CC BY-SA 3.0 
+					// Source https://stackoverflow.com/a/20732091
+					var i = Math.floor(Math.log(this.size) / Math.log(1024));
+					return (this.size / Math.pow(1024, i)).toFixed(2) * 1
+							+ [ ' B', ' kiB', ' MiB', ' GiB', ' TiB' ][i];
+				};
+				
+				this.parents = function() {
+					var res = [];
+					var i = this.parent;
+					while (i !== undefined) {
+						res.unshift(i);
+						i = i.parent;
+					}
+					return res;
+				};
+
+				this.formatDate = function() {
+					return this.lastModified;
+				};
+
+				this.bucket = bucket;
+				this.children = [];
+				if (arguments.length == 3) {
+					this.prefix = arguments[1];
+					this.key = arguments[2];
+					this.isdir = true;
+				}
+				else {
+					this.processNode($(xmlNode));
+				}
+			};
+
 			var s3index = function(target, config) {
 				this.init = function() {
 					if (this.config.bucket === undefined) {
 						return;
 					}
-					this.target.append(Mustache.render(t('main')));
-					this.loadContent(config.root, $('table tr', this.target)
-							.first());
+					if (this.config.root.length > 0) {
+						this.createBreadcrumb();
+					}
+					if (this.config.bindtohash) {
+						var _this = this;
+						$(window).on('hashchange', function() {
+							var key = location.hash.substring(1);
+							if (key !== '' && key.substring(key.length-1) != '/') {
+								key += '/';
+							}
+							_this.showListing(key);
+						});
+					}
+					this.loadContent(this.config.root);
+				};
+				
+				this.createBreadcrumb = function() {
+					var segments = this.config.root.split('/');
+					var path = '';
+					var parent = new s3resource(this.config.bucket, path, path);
+					this.keymap[parent.key] = parent;
+					for (var i = 0; i < segments.length-1; ++i) {
+						var element = new s3resource(this.config.bucket, path, path + segments[i] + '/');
+						element.parent = parent;
+						path = element.key;
+						this.keymap[element.key] = element;
+						parent = element;
+					}
 				};
 
-				this.loadContent = function(prefix, target) {
+				this.loadContent = function(prefix) {
 					var _this = this;
 					this.busy(true);
 					$.get(this.config.bucket, {
@@ -86,7 +189,7 @@ tr.directory {
 						prefix : prefix,
 						'list-type' : '2'
 					}).done(function(data) {
-						_this.processContent(data, target);
+						_this.processContent(data);
 						_this.busy(false);
 					}).fail(function() {
 						alert('Failed to get bucket content.');
@@ -94,109 +197,105 @@ tr.directory {
 					});
 				};
 
-				this.processContent = function(data, target) {
+				this.processContent = function(data) {
 					var _this = this;
-					var entries = [];
+					// get root element
 					data = $(data).children().first();
-					this.parseCommonPrefixes(data, entries);
-					this.parseContents(data, entries);
-					this.render(entries, target);
-				};
+					
+					// find parent resource
+					var prefix = $(data).children('Prefix').text();
+					var root = this.keymap[prefix];
+					if (root === undefined) {
+						root = new s3resource(this.config.bucket, data);
+						this.keymap[prefix] = root;
+					}
+					
+					// ensure empty
+					root.children = [];
 
-				this.parseCommonPrefixes = function(xml, result) {
-					var prefix = $(xml).children('Prefix').text();
-					$(xml).children('CommonPrefixes').each(
-							function(idx, entry) {
-								entry = $(entry);
-								var res = {
-									key : entry.children('Prefix').text(),
-									prefix : prefix,
-									isdir : true,
-								};
-								res.name = res.key.substring(prefix.length);
-								result.push(res);
-							});
-				};
-
-				this.parseContents = function(xml, result) {
-					var _this = this;
-					var prefix = $(xml).children('Prefix').text();
-					$(xml).children('Contents').each(
-							function(idx, entry) {
-								entry = $(entry);
-								var key = entry.children('Key').text();
-								if (key === prefix) {
+					// process contents
+					$(data).children('CommonPrefixes, Contents').each(
+							function(idx, xml) {
+								var entry = new s3resource(_this.config.bucket,
+										xml);
+								if (entry.key === root.key) {
 									return;
 								}
-								var res = {
-									key : key,
-									prefix : prefix,
-									isdir : false,
-									size : entry.children('Size').text(),
-									lastModified : entry.children(
-											'LastModified').text()
-								};
-								res.name = res.key.substring(prefix.length);
-								res.uri = _this.config.bucket + '/' + res.key;
-								result.push(res);
+								root.children.push(entry);
+								entry.parent = root;
+								_this.keymap[entry.key] = entry;
 							});
-				};
 
-				this.render = function(entries, target) {
-					entries.sort(function(a, b) {
-						return a.name.localeCompare(b.name);
-					});
-
-					// find the proper target to add something to
-
-					target.data('loaded', true);
-					var _this = this;
-					for (var i = 0; i < entries.length; ++i) {
-						var entry = entries[i];
-						this.formatEntry(entry);
-						
-						var keyidx = this.keyidxctr++;
-						this.keyidx[entry.key] = keyidx;
-						entry['tree-node'] = 'treegrid-'+keyidx;
-						if (this.keyidx[entry.prefix] !== undefined) {
-							entry['tree-parent'] = 'treegrid-parent-'+this.keyidx[entry.prefix];
-						}
-
-						var tmpl = entry.isdir ? "dir" : "file";
-						target.after(Mustache.render(t(tmpl), entry));
-						target = target.next();
-
-						if (entry.isdir) {
-							target.click(function() {
-								var elm = $(this);
-								if (!elm.data('loaded')) {
-									_this.loadContent(entry.key, elm);
-								}
-							});
-						}
-					}
-				};
-
-				this.formatEntry = function(entry) {
-					if (entry.size !== undefined) {
-						if (entry.size == 0) {
-							entry.prettySize = 0;
+					// Sort dirs first
+					root.children.sort(function(a, b) {
+						if (a.isdir && !b.isdir) {
+							return -1;
+						} else if (!a.isdir && b.isdir) {
+							return 1;
 						} else {
-							// Based on work by Andrew V.
-							// CC BY-SA 3.0 
-							// Source https://stackoverflow.com/a/20732091
-							var i = Math.floor(Math.log(entry.size)
-									/ Math.log(1024));
-							entry.prettySize = (entry.size / Math.pow(1024, i))
-									.toFixed(2)
-									* 1
-									+ [ ' B', ' kiB', ' MiB', ' GiB', ' TiB' ][i];
+							return a.name().localeCompare(b.name());
+						}
+					});
+					
+					// make nice title for root element
+					if (this.keymap[''] !== undefined && typeof this.keymap[''].name === 'function') {
+						var title = $(data).children('Name').text();
+						if (title !== '') {
+							this.keymap[''].name = title;
 						}
 					}
-					if (entry.lastModified !== undefined) {
-						// TODO
+
+					this.render(root);
+				};
+
+				this.render = function(directory) {
+					directory.id = 'lst'+(++this.idcounter);
+					this.idmap[directory.id] = directory;
+					
+					var rendered = Mustache.render(t('main'), directory, t);
+					$(this.target).children().hide();
+					this.target.append(rendered);
+					
+					var _this = this;
+					if (!this.config.bindtohash) {
+						$('#'+directory.id+' tr.directory a, #'+directory.id+' ol.breadcrumb a').each(function(idx, elm){
+							$(elm).click(function() {
+								_this.showListing($(this).data('key'));
+								return false;
+							});
+						});
+					}
+					this.updateTitle(directory);
+				};
+				
+				this.showListing = function(key) {
+					if (this.keymap[key] === undefined || this.keymap[key].id === undefined) {
+						this.loadContent(key);
+					}
+					else {
+						var elmId = this.keymap[key].id;
+						this.target.children().hide();
+						$('#'+elmId).show();
+						this.updateTitle(this.keymap[key]);
 					}
 				};
+				
+				this.updateTitle = function(directory) {
+					if (!this.config.updatetitle) {
+						return;
+					}
+					var title = '';
+					while (directory !== undefined) {
+						if (title.length > 0) {
+							title = ' / ' + title;
+						}
+						title = (typeof directory.name === "function"?directory.name():directory.name) + title;
+						directory = directory.parent;
+					}
+					if (title !== '') {
+						document.title = title;
+					}
+				}
 
 				this.busy = function(isbusy) {
 					if (this.config.pleaseWait === undefined) {
@@ -204,9 +303,10 @@ tr.directory {
 					}
 					this.config.pleaseWait.toggle(isbusy);
 				};
-				
-				this.keyidxctr = 0;
-				this.keyidx = {};
+
+				this.idcounter = 0;
+				this.idmap = {};
+				this.keymap = {};
 
 				this.target = target;
 				this.config = config;
@@ -218,27 +318,50 @@ tr.directory {
 	</script>
 
 	<script id="tmpl-main" type="x-tmpl-mustache">
-	<table class="table table-striped">
-		<tr>
-			<th>Name</th>
-			<th class="text-right">Size</th>
-			<th>Last Modified</th>
-		</tr>
-	</table>
+		<div class="listing" id="{{id}}">
+			<ol class="breadcrumb">
+				{{#parents}}
+					<li><a href="#{{key}}" data-key="{{key}}">{{name}}</a></li>
+				{{/parents}}
+				<li class="active">{{name}}</a>
+			</ol>
+			<table class="table table-striped table-hover">
+				<thead>
+					<tr>
+						<th>Name</th>
+						<th class="text-right">Size</th>
+						<th>Last Modified</th>
+					</tr>
+				</thead>
+				<tbody>
+					{{#children}}
+						{{#isdir}}
+							{{> dir}}
+						{{/isdir}}
+						{{^isdir}}
+							{{> file}}
+						{{/isdir}}
+					{{/children}}
+					{{^children}}
+					<tr class="warning"><td colspan="3" class="text-center"><em>No content</em></td></tr>
+					{{/children}}
+				</tbody>
+			</table>
+		<div>
 	</script>
 
 	<script id="tmpl-dir" type="x-tmpl-mustache">
-		<tr class="directory {{tree-node}} {{tree-parent}}" data-key="{{key}}">
-			<td>{{name}}</td>
+		<tr class="directory">
+			<td><a href="#{{key}}" data-key="{{key}}"><i class="glyphicon glyphicon-folder-close"></i> {{name}}</a></td>
 			<td></td>
 			<td></td>
 		</tr>
 	</script>
 
 	<script id="tmpl-file" type="x-tmpl-mustache">
-		<tr class="file {{tree-parent}}" data-key="{{key}}">
-			<td><a href="{{uri}}">{{name}}</a></td>
-			<td  class="text-right" title="{{size}} bytes">{{prettySize}}</td>
+		<tr class="file" data-key="{{key}}">
+			<td><a href="{{uri}}"><i class="glyphicon glyphicon-file"></i> {{name}}</a></td>
+			<td class="text-right" title="{{size}} bytes">{{formatSize}}</td>
 			<td>{{lastModified}}</td>
 		</tr>
 	</script>
@@ -257,20 +380,51 @@ tr.directory {
 			return query;
 		}(location.search);
 
+		
 		var config = {
 			// Bucket URL
-			bucket : q.bucket,
+			bucket : q.bucket?q.bucket:'',
 			// Starting prefix
-			root : q.root ? q.root : '',
+			root : '',
 			// Element to show/hide while loading
 			pleaseWait : $('#pleaseWait'),
-			// Function can return false to hide elements
-			filter : function() {
-			}
+			// If true, bind to the hash changes in the url 
+			bindtohash: true,
+			// If true, update the document title with the breadcrumb
+			updatetitle: true
 		};
+		
+		if (config.bucket === '' && location.host) {
+			var regex = /(([^.]+)\.)?s3\.([^.]+)\.amazonaws\.com/g;
+			var match = regex.exec(location.host);
+			if (match) {
+				var bucketid = match[2];
+				if (bucketid === undefined) {
+					// get bucketid from first path element
+					var path = location.pathname.split('/');
+					if (path.length >= 1) {
+						bucketid = path[1];
+					}
+				}
+				if (bucketid !== undefined) {
+					config.bucket = 'https://'+bucketid+'.s3.'+match[3]+'.amazonaws.com';
+				}
+			}	
+		}
+		
+		if (config.root === '' && location.hash.length > 1) {
+			config.root = location.hash.substring(1);
+			if (config.root.substring(config.root.length-1) != '/') {
+				// append '/' if missing
+				config.root += '/';
+			}
+		}
 
-		// TODO: if bucket is undefined, quess from location
-		new s3index($('#index'), config);
+		if (config.bucket !== '') {
+			new s3index($('#index'), config);
+		} else {
+			alert('No bucket');
+		}
 	</script>
 </body>
 </html>
