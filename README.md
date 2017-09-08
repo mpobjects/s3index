@@ -12,3 +12,6 @@ Just drop the `index.html` in your S3 bucket and it should work automatically wh
 
 Alternatively you can put it anywhere where and specify the URL parameter `?bucket=` with the bucket URL.
 
+## Example
+
+[Example](https://mpobjects.github.io/s3index/?bucket=https://s3-eu-west-1.amazonaws.com/data.openspending.org)
