@@ -395,7 +395,7 @@
 		};
 		
 		if (config.bucket === '' && location.host) {
-			var regex = /(([^.]+)\.)?s3\.([^.]+)\.amazonaws\.com/g;
+			var regex = /((.+)\.)?(s3[.-][^.]+\.amazonaws\.com)/g;
 			var match = regex.exec(location.host);
 			if (match) {
 				var bucketid = match[2];
@@ -407,7 +407,7 @@
 					}
 				}
 				if (bucketid !== undefined) {
-					config.bucket = 'https://'+bucketid+'.s3.'+match[3]+'.amazonaws.com';
+					config.bucket = 'https://'+match[3]+'/'+bucketid;
 				}
 			}	
 		}
