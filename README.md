@@ -15,3 +15,5 @@ Alternatively you can put it anywhere where and specify the URL parameter `?buck
 ## Example
 
 [Example](https://mpobjects.github.io/s3index/?bucket=https://s3-eu-west-1.amazonaws.com/data.openspending.org)
+
+![](http://i.imgur.com/eoFeupQ.png)
