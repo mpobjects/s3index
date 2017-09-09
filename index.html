@@ -109,8 +109,8 @@
 					if (this.size === undefined) {
 						return undefined;
 					}
-					if (this.size === 0) {
-						return null;
+					if (this.size === '0') {
+						return '0 B';
 					}
 					// Based on work by Andrew V.
 					// CC BY-SA 3.0 
@@ -210,6 +210,8 @@
 						root = new s3resource(this.config.bucket, data);
 						this.keymap[prefix] = root;
 					}
+					
+					root.lastLoaded = Date.now();
 					
 					// ensure empty
 					root.children = [];
