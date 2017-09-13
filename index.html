@@ -464,7 +464,7 @@
 				config.root += '/';
 			}
 		}
-		else if (hostderivedbucket && pathinfo.length > 1) {
+		else if (config.root === '' && hostderivedbucket && pathinfo.length > 1) {
 			// last part would be this file
 			pathinfo.pop();
 			config.root = pathinfo.join('/')+'/';

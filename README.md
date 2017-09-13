@@ -44,6 +44,8 @@ Just drop the `index.html` in your S3 bucket and it should work automatically wh
 
 Alternatively you can put it anywhere where and specify the URL parameter `?bucket=` with the bucket URL, or edit the HTML and change the `config` object at the end.
 
+The directory which is listed is provided in the hash part of the URL, or specified as the root field in the `config` object in the script. 
+
 ## Example
 
 [Example](https://mpobjects.github.io/s3index/?bucket=https://s3-eu-west-1.amazonaws.com/data.openspending.org)
