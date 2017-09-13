@@ -20,7 +20,8 @@
 <head>
 <meta charset="utf-8">
 <title>S3 Bucket Index</title>
-<meta name="generator" content="s3index; https://github.com/mpobjects/s3index" />
+<meta name="generator"
+	content="s3index; https://github.com/mpobjects/s3index" />
 <meta name="robots" content="none" />
 <link rel="stylesheet"
 	href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap.min.css"
@@ -43,8 +44,11 @@
 	</div>
 
 	<div id="index" class="container-fluid"></div>
-	
-	<div class="container-fluid text-right text-muted"><small>Created using <a href="https://github.com/mpobjects/s3index">s3index by MP Objects</a></small></div>
+
+	<div class="container-fluid text-right text-muted">
+		<small>Created using <a
+			href="https://github.com/mpobjects/s3index">s3index by MP Objects</a></small>
+	</div>
 
 	<script
 		src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.2.1/jquery.min.js"
@@ -168,6 +172,18 @@
 					this.loadContent(this.config.root);
 				};
 				
+				this.message = function(title, message) {
+					var elm = $('#s3index-message');
+					if (elm.length == 0) {
+						var rendered = Mustache.render(t('message'), {}, t);
+						$('body').append(rendered);
+						elm = $('#s3index-message');
+					}
+					$('.modal-title', elm).text(title);
+					$('.modal-body p', elm).text(message);
+					elm.modal('show');
+				};
+				
 				this.createBreadcrumb = function() {
 					var segments = this.config.root.split('/');
 					var path = '';
@@ -192,8 +208,9 @@
 					}).done(function(data) {
 						_this.processContent(data);
 						_this.busy(false);
-					}).fail(function() {
-						alert('Failed to get bucket content.');
+					}).fail(function(jqXHR, textStatus, errorThrown) {
+						var message = $('Message', jqXHR.responseXML).text();
+						_this.message('Failed to get bucket content.', message);
 						_this.busy(false);
 					});
 				};
@@ -374,6 +391,22 @@
 		</tr>
 	</script>
 
+	<script id="tmpl-message" type="x-tmpl-mustache">
+		<div id="s3index-message" class="modal fade" tabindex="-1" role="dialog">
+  			<div class="modal-dialog" role="document">
+    			<div class="modal-content panel-danger">
+      				<div class="modal-header panel-heading">
+        				<button type="button" class="close" data-dismiss="modal" aria-label="Close"><span aria-hidden="true">&times;</span></button>
+        				<h4 class="modal-title">{{title}}</h4>
+      				</div>
+      				<div class="modal-body">
+        				<p>{{message}}</p>
+      				</div>
+    			</div>
+			</div>
+		</div>
+	</script>
+
 	<script type="text/javascript">
 		// Following function by Raivo Fishmeister
 		// CC BY-SA 3.0 
@@ -402,6 +435,9 @@
 			updatetitle: true
 		};
 		
+		
+		var pathinfo = location.pathname.split('/');
+		var hostderivedbucket = false;
 		if (config.bucket === '' && location.host) {
 			var regex = /((.+)\.)?(s3[.-][^.]+\.amazonaws\.com)/g;
 			var match = regex.exec(location.host);
@@ -409,22 +445,30 @@
 				var bucketid = match[2];
 				if (bucketid === undefined) {
 					// get bucketid from first path element
-					var path = location.pathname.split('/');
-					if (path.length >= 1) {
-						bucketid = path[1];
+					if (pathinfo.length > 1) {
+						pathinfo.shift(); // first is blank
+						bucketid = pathinfo.shift();
 					}
 				}
 				if (bucketid !== undefined) {
 					config.bucket = 'https://'+match[3]+'/'+bucketid;
+					hostderivedbucket = true;
 				}
 			}	
 		}
 		
-		if (config.root === '' && location.hash.length > 1) {
-			config.root = location.hash.substring(1);
-			if (config.root.substring(config.root.length-1) != '/') {
-				// append '/' if missing
-				config.root += '/';
+		if (config.root === '') {
+			if (location.hash.length > 1) {
+				config.root = location.hash.substring(1);
+				if (config.root.substring(config.root.length-1) != '/') {
+					// append '/' if missing
+					config.root += '/';
+				}
+			}
+			else if (hostderivedbucket && pathinfo.length > 1) {
+				// last part would be this file
+				pathinfo.pop();
+				config.root = pathinfo.join('/')+'/';
 			}
 		}
 
