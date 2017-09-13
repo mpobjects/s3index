@@ -457,19 +457,17 @@
 			}	
 		}
 		
-		if (config.root === '') {
-			if (location.hash.length > 1) {
-				config.root = location.hash.substring(1);
-				if (config.root.substring(config.root.length-1) != '/') {
-					// append '/' if missing
-					config.root += '/';
-				}
+		if (location.hash.length > 1) {
+			config.root = location.hash.substring(1);
+			if (config.root.substring(config.root.length-1) != '/') {
+				// append '/' if missing
+				config.root += '/';
 			}
-			else if (hostderivedbucket && pathinfo.length > 1) {
-				// last part would be this file
-				pathinfo.pop();
-				config.root = pathinfo.join('/')+'/';
-			}
+		}
+		else if (hostderivedbucket && pathinfo.length > 1) {
+			// last part would be this file
+			pathinfo.pop();
+			config.root = pathinfo.join('/')+'/';
 		}
 
 		if (config.bucket !== '') {

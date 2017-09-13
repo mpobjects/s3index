@@ -40,7 +40,7 @@ This would only allow listing of the contents of the `FOOBAR` directory of the b
 
 ## Installation
 
-Just drop the `index.html` in your S3 bucket and it should work automatically when opening the page.
+Just drop the `index.html` in your S3 bucket and it should work automatically when opening the page. If you place it in a sub-directory it will automatically list the contents of that directory.
 
 Alternatively you can put it anywhere where and specify the URL parameter `?bucket=` with the bucket URL, or edit the HTML and change the `config` object at the end.
 
