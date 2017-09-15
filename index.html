@@ -437,16 +437,16 @@
 		
 		
 		var pathinfo = location.pathname.split('/');
+		pathinfo.shift(); // first is blank
 		var hostderivedbucket = false;
 		if (config.bucket === '' && location.host) {
-			var regex = /((.+)\.)?(s3[.-][^.]+\.amazonaws\.com)/g;
+			var regex = /((.+)\.)?(s3([.-][^.]+)?\.amazonaws\.com)/g;
 			var match = regex.exec(location.host);
 			if (match) {
 				var bucketid = match[2];
 				if (bucketid === undefined) {
 					// get bucketid from first path element
 					if (pathinfo.length > 1) {
-						pathinfo.shift(); // first is blank
 						bucketid = pathinfo.shift();
 					}
 				}
