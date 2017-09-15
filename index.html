@@ -445,13 +445,15 @@
 			if (match) {
 				var bucketid = match[2];
 				if (bucketid === undefined) {
-					// get bucketid from first path element
+					// [s3-host]/[bucketid]
 					if (pathinfo.length > 1) {
-						bucketid = pathinfo.shift();
+						config.bucket = 'https://'+match[3]+'/'+pathinfo.shift();
+						hostderivedbucket = true;
 					}
 				}
-				if (bucketid !== undefined) {
-					config.bucket = 'https://'+match[3]+'/'+bucketid;
+				else {
+					// [bucketid].[s3-host]
+					config.bucket = 'https://'bucketid+'.'+match[3];
 					hostderivedbucket = true;
 				}
 			}	
