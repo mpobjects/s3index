@@ -31,6 +31,11 @@
 	href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap-theme.min.css"
 	integrity="sha384-rHyoN1iRsVXV4nD0JutlnGaslCJuC7uwjduW9SVrLvRYooPp2bWYgmgJQIXwl/Sp"
 	crossorigin="anonymous">
+<style>
+.loadMore {
+    cursor: pointer; 
+}
+</style>
 </head>
 <body>
 
@@ -141,6 +146,7 @@
 
 				this.bucket = bucket;
 				this.children = [];
+
 				if (arguments.length == 3) {
 					this.prefix = arguments[1];
 					this.key = arguments[2];
@@ -203,7 +209,7 @@
 					this.busy(true);
 					$.get(this.config.bucket, {
 						delimiter : '/',
-						prefix : prefix,
+						prefix : decodeURI(prefix),
 						'list-type' : '2'
 					}).done(function(data) {
 						_this.processContent(data);
@@ -211,6 +217,25 @@
 					}).fail(function(jqXHR, textStatus, errorThrown) {
 						var message = $('Message', jqXHR.responseXML).text();
 						_this.message('Failed to get bucket content.', message);
+						_this.busy(false);
+					});
+				};
+                
+                this.loadMore = function(directory) {
+					var _this = this;
+					this.busy(true);
+					$.get(this.config.bucket, {
+						delimiter : '/',
+						prefix : decodeURI(directory.key),
+						'list-type' : '2',
+                        'continuation-token' : directory.nextContinuationToken
+					}).done(function(data) {
+                        $('#'+directory.id).remove();
+						_this.processContent(data);
+						_this.busy(false);
+					}).fail(function(jqXHR, textStatus, errorThrown) {
+						var message = $('Message', jqXHR.responseXML).text();
+						_this.message('Failed to get additional bucket content.', message);
 						_this.busy(false);
 					});
 				};
@@ -229,9 +254,10 @@
 					}
 					
 					root.lastLoaded = Date.now();
-					
-					// ensure empty
-					root.children = [];
+                    
+                    if (this.config.allowLoadMore) {
+                        root.nextContinuationToken = data.children('NextContinuationToken').text();
+                    }
 
 					// process contents
 					$(data).children('CommonPrefixes, Contents').each(
@@ -277,6 +303,12 @@
 					this.target.append(rendered);
 					
 					var _this = this;
+                    
+                    $('#'+directory.id+' td.loadMore').click(function() {
+                        _this.loadMore(directory);
+						return false;
+                    });
+                    
 					if (!this.config.bindtohash) {
 						$('#'+directory.id+' tr.directory a, #'+directory.id+' ol.breadcrumb a').each(function(idx, elm){
 							$(elm).click(function() {
@@ -370,6 +402,10 @@
 					{{^children}}
 					<tr class="warning"><td colspan="3" class="text-center"><em>No content</em></td></tr>
 					{{/children}}
+                    {{#nextContinuationToken}}
+                    <tr class="info"><td colspan="3" class="text-center loadMore"><em>Load more ...</em></td></tr>
+                    {{/nextContinuationToken}}
+                    <tr><td colspan="3" class="text-right"><small><em>{{children.length}}</em> entries</small></td></tr>
 				</tbody>
 			</table>
 		<div>
@@ -432,7 +468,9 @@
 			// If true, bind to the hash changes in the url 
 			bindtohash: true,
 			// If true, update the document title with the breadcrumb
-			updatetitle: true
+			updatetitle: true,
+            // If true, loading the next 1000 entries is possible
+            allowLoadMore: true
 		};
 		
 		
@@ -460,7 +498,7 @@
 		}
 		
 		if (location.hash.length > 1) {
-			config.root = location.hash.substring(1);
+			config.root = decodeURI(location.hash).substring(1);
 			if (config.root.substring(config.root.length-1) != '/') {
 				// append '/' if missing
 				config.root += '/';
